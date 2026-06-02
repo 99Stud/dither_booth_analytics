@@ -4,7 +4,7 @@ import { PostHog } from 'posthog-node'
 console.log("runtime", process.versions.bun);
 
 const client = new PostHog(
-  'phc_sD3J3yLLySaExFjHgrmQ8Szk6TXVJnRT2yakxHbvpEvD',
+  Bun.env.POSTHOG_API_KEY!,
   {
       host: 'https://eu.i.posthog.com'
   }
