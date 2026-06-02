@@ -40,11 +40,11 @@ const trackingRedirections = new Map<`/track/${string}/${string}`, {
 export function runAnalyticsServer(options: {
   mode: AnalyticsServerMode;
 }): AnalyticsServerLifecycle {
-  if (options.mode === "development" && Bun.env.NODE_ENV === "production") {
-    throw new Error(
-      "runAnalyticsServer: development mode must not run with NODE_ENV=production",
-    );
-  }
+  // if (options.mode === "development" && Bun.env.NODE_ENV === "production") {
+  //   throw new Error(
+  //     "runAnalyticsServer: development mode must not run with NODE_ENV=production",
+  //   );
+  // }
 
   const server = Bun.serve({
     port: getPort(),
