@@ -1,0 +1,19 @@
+{
+  "name": "dither_booth_analytics",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch index.ts",
+    "build": "tsc --noEmit -p tsconfig.json && bun scripts/build.ts",
+    "start": "bun ./dist/server.js",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "posthog-node": "5.35.11"
+  }
+}
