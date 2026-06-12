@@ -41,13 +41,3 @@ const serverResult = await Bun.build({
 });
 
 reportBuildFailure(serverResult);
-
-const wakeUpCronResult = await Bun.build({
-  ...baseBuildOptions,
-  entrypoints: [resolve(appRoot, "src/wake-up-cron.ts")],
-  naming: {
-    entry: "wake-up-cron.[ext]",
-  },
-});
-
-reportBuildFailure(wakeUpCronResult);

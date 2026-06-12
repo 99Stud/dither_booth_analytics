@@ -8,9 +8,7 @@
     "build": "tsc --noEmit -p tsconfig.json && bun scripts/build.ts",
     "start": "bun ./dist/server.js",
     "check-types": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test",
-    "wake:install": "bun scripts/install-wake-up-cron.ts",
-    "wake:remove": "bun scripts/remove-wake-up-cron.ts"
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest",

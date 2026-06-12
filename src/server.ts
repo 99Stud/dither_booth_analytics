@@ -1,4 +1,9 @@
 import { PostHog } from "posthog-node";
+import {
+  ensureWakeUpCronIsConfigured,
+  startWakeUpCron,
+  type WakeUpCronLifecycle,
+} from "./wake-up-cron";
 
 export type AnalyticsServerMode = "development" | "production";
 
@@ -152,6 +157,7 @@ export async function handleAnalyticsRequest(
 
 export function runAnalyticsServer(options: {
   mode: AnalyticsServerMode;
+  wakeUpCron?: boolean;
 }): AnalyticsServerLifecycle {
   if (options.mode === "development" && Bun.env.NODE_ENV === "production") {
     throw new Error(
@@ -161,10 +167,22 @@ export function runAnalyticsServer(options: {
 
   ensureWakeUpSecretIsConfigured(options.mode);
 
+  const shouldStartWakeUpCron =
+    options.wakeUpCron ?? options.mode === "production";
+  let wakeUpCron: WakeUpCronLifecycle | undefined;
+
+  if (shouldStartWakeUpCron) {
+    ensureWakeUpCronIsConfigured();
+  }
+
   const server = Bun.serve({
     port: getPort(),
     fetch: (request) => handleAnalyticsRequest(request),
   });
+
+  if (shouldStartWakeUpCron) {
+    wakeUpCron = startWakeUpCron();
+  }
 
   console.log(
     `dither_booth_analytics server started on ${server.url.toString()}`,
@@ -174,6 +192,7 @@ export function runAnalyticsServer(options: {
 
   const close = () => {
     closePromise ??= Promise.resolve().then(() => {
+      wakeUpCron?.close();
       server.stop(true);
     });
 

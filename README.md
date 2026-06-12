@@ -36,8 +36,8 @@ The server listens on `PORT` when set, or `3003` by default.
 
 - `POSTHOG_API_KEY`: required for tracking events.
 - `PORT`: optional server port. Defaults to `3003`.
-- `WAKE_UP_SECRET`: required in production for the wake-up endpoint and cron caller.
-- `WAKE_UP_URL`: required by the cron caller. Use the full URL to `/internal/wake-up`, for example `https://analytics.example.com/internal/wake-up`.
+- `WAKE_UP_SECRET`: required in production for the wake-up endpoint and in-process cron caller.
+- `WAKE_UP_URL`: required by the in-process cron caller. Use the full URL to `/internal/wake-up`, for example `https://analytics.example.com/internal/wake-up`.
 
 ## Routes
 
@@ -53,24 +53,15 @@ Missing or invalid wake-up credentials return `401`. Unsupported methods return 
 
 ## Wake-Up Cron
 
-Build the production artifacts before installing the host-level cron job:
+The wake-up cron runs in the same process as the production server. Build and
+start the production server with `WAKE_UP_URL` and `WAKE_UP_SECRET` configured:
 
 ```bash
 bun run build
+bun run start
 ```
 
-Then make sure `WAKE_UP_URL` and `WAKE_UP_SECRET` are available to the scheduled job and register it:
-
-```bash
-bun run wake:install
-```
-
-This installs Bun's OS-level cron job named `dither-booth-analytics-wake-up` on the schedule `*/10 * * * *`. Re-running the command replaces the existing job with the same title instead of duplicating it.
-
-To remove the job:
-
-```bash
-bun run wake:remove
-```
-
-The cron job sends an authenticated wake-up request every 10 minutes. It keeps a reachable service warm, but it does not replace process supervision for starting or restarting the analytics server.
+The scheduler starts with the server, sends an authenticated wake-up request
+every 10 minutes, and stops during server shutdown. It keeps a reachable service
+warm, but it does not replace process supervision for starting or restarting the
+analytics server.

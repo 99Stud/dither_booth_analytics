@@ -5,14 +5,20 @@ Bun.env.POSTHOG_API_KEY ??= "test-posthog-key";
 const { handleAnalyticsRequest, runAnalyticsServer } = await import("./server");
 
 const originalWakeUpSecret = Bun.env.WAKE_UP_SECRET;
+const originalWakeUpUrl = Bun.env.WAKE_UP_URL;
 
-function restoreWakeUpSecret() {
+function restoreWakeUpEnv() {
   if (originalWakeUpSecret === undefined) {
     delete Bun.env.WAKE_UP_SECRET;
-    return;
+  } else {
+    Bun.env.WAKE_UP_SECRET = originalWakeUpSecret;
   }
 
-  Bun.env.WAKE_UP_SECRET = originalWakeUpSecret;
+  if (originalWakeUpUrl === undefined) {
+    delete Bun.env.WAKE_UP_URL;
+  } else {
+    Bun.env.WAKE_UP_URL = originalWakeUpUrl;
+  }
 }
 
 function createWakeUpRequest(options: {
@@ -30,7 +36,7 @@ function createWakeUpRequest(options: {
 }
 
 afterEach(() => {
-  restoreWakeUpSecret();
+  restoreWakeUpEnv();
 });
 
 describe("wake-up endpoint", () => {
@@ -96,6 +102,15 @@ describe("wake-up endpoint", () => {
 
     expect(() => runAnalyticsServer({ mode: "production" })).toThrow(
       "WAKE_UP_SECRET must be set in production",
+    );
+  });
+
+  test("requires WAKE_UP_URL before starting the production wake-up cron", () => {
+    Bun.env.WAKE_UP_SECRET = "wake-up-secret";
+    delete Bun.env.WAKE_UP_URL;
+
+    expect(() => runAnalyticsServer({ mode: "production" })).toThrow(
+      "WAKE_UP_URL must be set for the wake-up cron job",
     );
   });
 });
