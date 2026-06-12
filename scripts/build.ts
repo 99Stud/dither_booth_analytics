@@ -7,26 +7,47 @@ const distDirectory = resolve(appRoot, "dist");
 await rm(distDirectory, { recursive: true, force: true });
 
 const nodeEnv = Bun.env.NODE_ENV ?? "production";
-const serverResult = await Bun.build({
-  define: {
-    "process.env.NODE_ENV": JSON.stringify(nodeEnv),
-  },
-  entrypoints: [resolve(appRoot, "src/production-entry.ts")],
-  minify: nodeEnv === "production",
-  naming: {
-    entry: "server.[ext]",
-  },
-  outdir: distDirectory,
-  packages: "external",
-  sourcemap: "none",
-  splitting: false,
-  target: "bun",
-});
 
-if (!serverResult.success) {
-  for (const log of serverResult.logs) {
+function reportBuildFailure(result: Bun.BuildOutput) {
+  if (result.success) {
+    return;
+  }
+
+  for (const log of result.logs) {
     console.error(log);
   }
 
   process.exit(1);
 }
+
+const baseBuildOptions = {
+  define: {
+    "process.env.NODE_ENV": JSON.stringify(nodeEnv),
+  },
+  minify: nodeEnv === "production",
+  outdir: distDirectory,
+  packages: "external",
+  sourcemap: "none",
+  splitting: false,
+  target: "bun",
+} satisfies Omit<Bun.BuildConfig, "entrypoints" | "naming">;
+
+const serverResult = await Bun.build({
+  ...baseBuildOptions,
+  entrypoints: [resolve(appRoot, "src/production-entry.ts")],
+  naming: {
+    entry: "server.[ext]",
+  },
+});
+
+reportBuildFailure(serverResult);
+
+const wakeUpCronResult = await Bun.build({
+  ...baseBuildOptions,
+  entrypoints: [resolve(appRoot, "src/wake-up-cron.ts")],
+  naming: {
+    entry: "wake-up-cron.[ext]",
+  },
+});
+
+reportBuildFailure(wakeUpCronResult);

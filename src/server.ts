@@ -1,14 +1,17 @@
+import { PostHog } from "posthog-node";
+
 export type AnalyticsServerMode = "development" | "production";
-import { PostHog } from 'posthog-node'
+
+type AnalyticsCapture = (event: Parameters<PostHog["capture"]>[0]) => void;
 
 console.log("runtime", process.versions.bun);
 
 const client = new PostHog(
   Bun.env.POSTHOG_API_KEY!,
   {
-      host: 'https://eu.i.posthog.com'
-  }
-)
+    host: "https://eu.i.posthog.com",
+  },
+);
 
 export type AnalyticsServerLifecycle = {
   close: () => Promise<void>;
@@ -16,6 +19,9 @@ export type AnalyticsServerLifecycle = {
 };
 
 const DEFAULT_PORT = 3003;
+const WAKE_UP_PATH = "/internal/wake-up";
+const WAKE_UP_ALLOWED_METHODS = "GET, HEAD";
+const textEncoder = new TextEncoder();
 
 function getPort() {
   const parsedPort = Number(Bun.env.PORT ?? DEFAULT_PORT);
@@ -25,6 +31,73 @@ function getPort() {
   }
 
   return parsedPort;
+}
+
+function ensureWakeUpSecretIsConfigured(mode: AnalyticsServerMode) {
+  if (mode === "production" && !Bun.env.WAKE_UP_SECRET?.trim()) {
+    throw new Error("WAKE_UP_SECRET must be set in production");
+  }
+}
+
+function getBearerToken(request: Request) {
+  const authorization = request.headers.get("Authorization");
+
+  if (!authorization) {
+    return null;
+  }
+
+  const match = /^Bearer\s+(.+)$/.exec(authorization);
+  return match?.[1] ?? null;
+}
+
+async function sha256(value: string) {
+  return new Uint8Array(
+    await crypto.subtle.digest("SHA-256", textEncoder.encode(value)),
+  );
+}
+
+function fixedTimeEqual(left: Uint8Array, right: Uint8Array) {
+  let mismatch = left.length ^ right.length;
+  const length = Math.max(left.length, right.length);
+
+  for (let index = 0; index < length; index += 1) {
+    mismatch |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  }
+
+  return mismatch === 0;
+}
+
+async function isAuthorizedWakeUpRequest(request: Request) {
+  const expectedSecret = Bun.env.WAKE_UP_SECRET;
+  const providedSecret = getBearerToken(request);
+
+  if (!expectedSecret || !providedSecret) {
+    return false;
+  }
+
+  const [expectedDigest, providedDigest] = await Promise.all([
+    sha256(expectedSecret),
+    sha256(providedSecret),
+  ]);
+
+  return fixedTimeEqual(expectedDigest, providedDigest);
+}
+
+async function handleWakeUpRequest(request: Request) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return new Response(null, {
+      headers: {
+        Allow: WAKE_UP_ALLOWED_METHODS,
+      },
+      status: 405,
+    });
+  }
+
+  if (!(await isAuthorizedWakeUpRequest(request))) {
+    return new Response(null, { status: 401 });
+  }
+
+  return new Response(null, { status: 204 });
 }
 
 const trackingRedirections = new Map<`/track/${string}/${string}`, {
@@ -37,6 +110,46 @@ const trackingRedirections = new Map<`/track/${string}/${string}`, {
   ["/track/nexus-2026/heirvey-instagram", { redirectingUrl: "https://www.instagram.com/heirvey", event: "nexus-2026", linkId: "heirvey-instagram" }]
 ]);
 
+export async function handleAnalyticsRequest(
+  request: Request,
+  options: {
+    capture?: AnalyticsCapture;
+  } = {},
+) {
+  const url = new URL(request.url);
+
+  if (url.pathname === WAKE_UP_PATH) {
+    return handleWakeUpRequest(request);
+  }
+
+  if (!trackingRedirections.has(url.pathname as `/track/${string}/${string}`)) {
+    return new Response(null, { status: 404 });
+  }
+
+  if (request.method !== "GET") {
+    return new Response(null, {
+      headers: {
+        Allow: "GET",
+      },
+      status: 405,
+    });
+  }
+
+  const { redirectingUrl, event, linkId } = trackingRedirections.get(url.pathname as `/track/${string}/${string}`)!;
+
+  const capture = options.capture ?? ((capturedEvent) => client.capture(capturedEvent));
+
+  capture({
+    event: "dither_booth_ticket_scanned",
+    properties: {
+      event,
+      linkId,
+    },
+  });
+
+  return Response.redirect(redirectingUrl, 302);
+}
+
 export function runAnalyticsServer(options: {
   mode: AnalyticsServerMode;
 }): AnalyticsServerLifecycle {
@@ -46,36 +159,11 @@ export function runAnalyticsServer(options: {
     );
   }
 
+  ensureWakeUpSecretIsConfigured(options.mode);
+
   const server = Bun.serve({
     port: getPort(),
-    fetch(request) {
-      const url = new URL(request.url);
-
-      if (!trackingRedirections.has(url.pathname as `/track/${string}/${string}`)) {
-        return new Response(null, { status: 404 });
-      }
-
-      if (request.method !== "GET") {
-        return new Response(null, {
-          headers: {
-            Allow: "GET",
-          },
-          status: 405,
-        });
-      }
-
-      const { redirectingUrl, event, linkId } = trackingRedirections.get(url.pathname as `/track/${string}/${string}`)!;
-
-      client.capture({
-        event: 'dither_booth_ticket_scanned',
-        properties: {
-          event,
-          linkId,
-        },
-    })
-
-      return Response.redirect(redirectingUrl, 302);
-    },
+    fetch: (request) => handleAnalyticsRequest(request),
   });
 
   console.log(

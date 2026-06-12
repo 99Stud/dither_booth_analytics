@@ -7,13 +7,16 @@
     "dev": "bun --watch index.ts",
     "build": "tsc --noEmit -p tsconfig.json && bun scripts/build.ts",
     "start": "bun ./dist/server.js",
-    "check-types": "tsc --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "wake:install": "bun scripts/install-wake-up-cron.ts",
+    "wake:remove": "bun scripts/remove-wake-up-cron.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5"
+    "typescript": "^6.0.3"
   },
   "dependencies": {
-    "posthog-node": "5.35.11"
+    "posthog-node": "5.36.17"
   }
 }
