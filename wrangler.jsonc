@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dither-booth-links",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "POSTHOG_HOST": "https://eu.i.posthog.com"
+  },
+  "routes": [
+		{
+			"pattern": "go.ditherbooth.com",
+			"custom_domain": true
+		},
+    {
+      "pattern": "analytics.ditherbooth.com",
+      "custom_domain": true
+    },
+  ]
+}

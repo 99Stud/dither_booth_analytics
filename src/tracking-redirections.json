@@ -1,0 +1,22 @@
+{
+  "/track/nexus-2026/nexus-station-instagram": {
+    "redirectingUrl": "https://www.instagram.com/nexus_station",
+    "event": "nexus-2026",
+    "linkId": "nexus-station-instagram"
+  },
+  "/track/nexus-2026/99stud-instagram": {
+    "redirectingUrl": "https://www.instagram.com/99stud",
+    "event": "nexus-2026",
+    "linkId": "99stud-instagram"
+  },
+  "/track/nexus-2026/heirvey-instagram": {
+    "redirectingUrl": "https://www.instagram.com/heirvey",
+    "event": "nexus-2026",
+    "linkId": "heirvey-instagram"
+  },
+	"/track/framer-event/framer": {
+		"redirectingUrl": "https://www.framer.com/",
+		"event": "framer",
+		"linkId": "framer-website"
+	}
+}

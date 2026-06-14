@@ -1,18 +1,23 @@
 {
-  "name": "dither_booth_analytics",
+  "name": "dither_booth_links",
   "module": "index.ts",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "bun --watch index.ts",
+    "dev:worker": "wrangler dev",
     "build": "tsc --noEmit -p tsconfig.json && bun scripts/build.ts",
     "start": "bun ./dist/server.js",
     "check-types": "tsc --noEmit -p tsconfig.json",
+    "cf:types": "wrangler types",
+    "deploy:worker": "wrangler deploy",
     "test": "bun test"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250609.0",
     "@types/bun": "latest",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wrangler": "^4.20.0"
   },
   "dependencies": {
     "posthog-node": "5.36.17"

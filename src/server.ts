@@ -1,22 +1,42 @@
 import { PostHog } from "posthog-node";
 import {
-  ensureWakeUpCronIsConfigured,
-  startWakeUpCron,
-  type WakeUpCronLifecycle,
-} from "./wake-up-cron";
+  trackingRedirections,
+  type TrackingPath,
+} from "./tracking-redirections.ts";
 
 export type AnalyticsServerMode = "development" | "production";
 
 type AnalyticsCapture = (event: Parameters<PostHog["capture"]>[0]) => void;
 
-console.log("runtime", process.versions.bun);
+const DEFAULT_POSTHOG_HOST = "https://eu.i.posthog.com" as Env["POSTHOG_HOST"];
 
-const client = new PostHog(
-  Bun.env.POSTHOG_API_KEY!,
-  {
-    host: "https://eu.i.posthog.com",
-  },
-);
+function readBunEnv(): Env {
+  return {
+    POSTHOG_API_KEY: Bun.env.POSTHOG_API_KEY ?? "",
+    POSTHOG_HOST: DEFAULT_POSTHOG_HOST,
+  };
+}
+
+function resolveEnv(env?: Env): Env {
+  return env ?? readBunEnv();
+}
+
+function createPostHogClient(env: Env) {
+  return new PostHog(env.POSTHOG_API_KEY, {
+    host: env.POSTHOG_HOST,
+  });
+}
+
+let defaultClient: PostHog | undefined;
+
+function getDefaultClient(env: Env) {
+  if (!env.POSTHOG_API_KEY) {
+    throw new Error("POSTHOG_API_KEY must be set");
+  }
+
+  defaultClient ??= createPostHogClient(env);
+  return defaultClient;
+}
 
 export type AnalyticsServerLifecycle = {
   close: () => Promise<void>;
@@ -24,9 +44,6 @@ export type AnalyticsServerLifecycle = {
 };
 
 const DEFAULT_PORT = 3003;
-const WAKE_UP_PATH = "/internal/wake-up";
-const WAKE_UP_ALLOWED_METHODS = "GET, HEAD";
-const textEncoder = new TextEncoder();
 
 function getPort() {
   const parsedPort = Number(Bun.env.PORT ?? DEFAULT_PORT);
@@ -38,96 +55,17 @@ function getPort() {
   return parsedPort;
 }
 
-function ensureWakeUpSecretIsConfigured(mode: AnalyticsServerMode) {
-  if (mode === "production" && !Bun.env.WAKE_UP_SECRET?.trim()) {
-    throw new Error("WAKE_UP_SECRET must be set in production");
-  }
-}
-
-function getBearerToken(request: Request) {
-  const authorization = request.headers.get("Authorization");
-
-  if (!authorization) {
-    return null;
-  }
-
-  const match = /^Bearer\s+(.+)$/.exec(authorization);
-  return match?.[1] ?? null;
-}
-
-async function sha256(value: string) {
-  return new Uint8Array(
-    await crypto.subtle.digest("SHA-256", textEncoder.encode(value)),
-  );
-}
-
-function fixedTimeEqual(left: Uint8Array, right: Uint8Array) {
-  let mismatch = left.length ^ right.length;
-  const length = Math.max(left.length, right.length);
-
-  for (let index = 0; index < length; index += 1) {
-    mismatch |= (left[index] ?? 0) ^ (right[index] ?? 0);
-  }
-
-  return mismatch === 0;
-}
-
-async function isAuthorizedWakeUpRequest(request: Request) {
-  const expectedSecret = Bun.env.WAKE_UP_SECRET;
-  const providedSecret = getBearerToken(request);
-
-  if (!expectedSecret || !providedSecret) {
-    return false;
-  }
-
-  const [expectedDigest, providedDigest] = await Promise.all([
-    sha256(expectedSecret),
-    sha256(providedSecret),
-  ]);
-
-  return fixedTimeEqual(expectedDigest, providedDigest);
-}
-
-async function handleWakeUpRequest(request: Request) {
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response(null, {
-      headers: {
-        Allow: WAKE_UP_ALLOWED_METHODS,
-      },
-      status: 405,
-    });
-  }
-
-  if (!(await isAuthorizedWakeUpRequest(request))) {
-    return new Response(null, { status: 401 });
-  }
-
-  return new Response(null, { status: 204 });
-}
-
-const trackingRedirections = new Map<`/track/${string}/${string}`, {
-  redirectingUrl: string;
-  event: string;
-  linkId: string;
-}>([
-  ["/track/nexus-2026/nexus-station-instagram", { redirectingUrl: "https://www.instagram.com/nexus_station", event: "nexus-2026", linkId: "nexus-station-instagram" }],
-  ["/track/nexus-2026/99stud-instagram", { redirectingUrl: "https://www.instagram.com/99stud", event: "nexus-2026", linkId: "99stud-instagram" }],
-  ["/track/nexus-2026/heirvey-instagram", { redirectingUrl: "https://www.instagram.com/heirvey", event: "nexus-2026", linkId: "heirvey-instagram" }]
-]);
-
 export async function handleAnalyticsRequest(
   request: Request,
   options: {
     capture?: AnalyticsCapture;
+    env?: Env;
   } = {},
 ) {
+  const env = resolveEnv(options.env);
   const url = new URL(request.url);
 
-  if (url.pathname === WAKE_UP_PATH) {
-    return handleWakeUpRequest(request);
-  }
-
-  if (!trackingRedirections.has(url.pathname as `/track/${string}/${string}`)) {
+  if (!trackingRedirections.has(url.pathname as TrackingPath)) {
     return new Response(null, { status: 404 });
   }
 
@@ -140,9 +78,15 @@ export async function handleAnalyticsRequest(
     });
   }
 
-  const { redirectingUrl, event, linkId } = trackingRedirections.get(url.pathname as `/track/${string}/${string}`)!;
+  const { redirectingUrl, event, linkId } = trackingRedirections.get(
+    url.pathname as TrackingPath,
+  )!;
 
-  const capture = options.capture ?? ((capturedEvent) => client.capture(capturedEvent));
+  const capture =
+    options.capture ??
+    ((capturedEvent) => {
+      getDefaultClient(env).capture(capturedEvent);
+    });
 
   capture({
     event: "dither_booth_ticket_scanned",
@@ -157,7 +101,6 @@ export async function handleAnalyticsRequest(
 
 export function runAnalyticsServer(options: {
   mode: AnalyticsServerMode;
-  wakeUpCron?: boolean;
 }): AnalyticsServerLifecycle {
   if (options.mode === "development" && Bun.env.NODE_ENV === "production") {
     throw new Error(
@@ -165,24 +108,12 @@ export function runAnalyticsServer(options: {
     );
   }
 
-  ensureWakeUpSecretIsConfigured(options.mode);
-
-  const shouldStartWakeUpCron =
-    options.wakeUpCron ?? options.mode === "production";
-  let wakeUpCron: WakeUpCronLifecycle | undefined;
-
-  if (shouldStartWakeUpCron) {
-    ensureWakeUpCronIsConfigured();
-  }
+  const env = readBunEnv();
 
   const server = Bun.serve({
     port: getPort(),
-    fetch: (request) => handleAnalyticsRequest(request),
+    fetch: (request) => handleAnalyticsRequest(request, { env }),
   });
-
-  if (shouldStartWakeUpCron) {
-    wakeUpCron = startWakeUpCron();
-  }
 
   console.log(
     `dither_booth_analytics server started on ${server.url.toString()}`,
@@ -192,7 +123,6 @@ export function runAnalyticsServer(options: {
 
   const close = () => {
     closePromise ??= Promise.resolve().then(() => {
-      wakeUpCron?.close();
       server.stop(true);
     });
 
